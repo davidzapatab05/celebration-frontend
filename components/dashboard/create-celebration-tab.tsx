@@ -34,7 +34,7 @@ interface CreateCelebrationTabProps {
 
 // Mensajes sugeridos por ocasión
 const messagesByOccasion: Record<string, string[]> = {
-    'san-valentin': [
+    'celebration': [
         "Desde que llegaste a mi vida, todo tiene más color y sentido. 💕",
         "Contigo he aprendido que el amor está en los pequeños detalles. 🌹",
         "No necesito un día especial para recordarte cuánto te quiero, pero hoy es la excusa perfecta. ❤️",

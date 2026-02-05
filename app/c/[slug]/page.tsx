@@ -169,7 +169,7 @@ function PublicViewContent() {
 
     // Helper for main question
     const getQuestionText = () => {
-        if (data.occasion?.slug === 'san-valentin') return "¿Quieres ser mi San Valentín? ❤️";
+        if (data.occasion?.slug === 'celebration') return "¿Quieres ser mi San Valentín? ❤️";
         if (data.occasion?.slug === 'personalizado' && data.extraData?.customName) {
             return `¿Quieres celebrar ${data.extraData.customName} conmigo? 🥂`;
         }
