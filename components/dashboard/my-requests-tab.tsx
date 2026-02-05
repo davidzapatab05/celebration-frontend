@@ -1,5 +1,6 @@
 'use client';
 
+import { getOptimizedImageUrl } from '@/lib/image-utils';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,9 @@ interface CelebrationRequest {
     affectionLevel?: string;
     imagePath?: string | null;
     occasion?: Occasion;
+    extraData?: {
+        isAnonymous?: boolean;
+    };
 }
 
 interface Occasion {
@@ -129,12 +133,11 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
         setEditName(request.partnerName);
         setEditMessage(request.message || '');
         setEditAffection(request.affectionLevel || 'te_amo');
-        // @ts-expect-error extraData type definition might be incomplete
         setEditIsAnonymous(request.extraData?.isAnonymous || false);
         setEditOccasionId(request.occasion?.id || '');
         setEditImage(null);
         setShouldDeleteImage(false);
-        setImagePreview(request.imagePath ? (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + request.imagePath : null);
+        setImagePreview(request.imagePath ? getOptimizedImageUrl(request.imagePath, { width: 800 }) : null);
     };
 
     // Pagination State
@@ -146,6 +149,8 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
         const fetchRequests = async () => {
             try {
                 const token = localStorage.getItem('auth_token');
+                if (!token) return; // Don't fetch if no token
+
                 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
                 const res = await axios.get(`${backendUrl}/celebration/mine/custom-all`, {
                     headers: { Authorization: `Bearer ${token}` }
@@ -166,6 +171,8 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                 }
             }
         };
+
+        fetchRequests(); // Run immediately
 
         const interval = setInterval(fetchRequests, 5000); // Poll every 5 seconds
         return () => clearInterval(interval);
@@ -209,7 +216,7 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                                                 <div className="relative h-full w-full flex items-center justify-center bg-white/50">
                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                                     <img src={imagePreview} alt="Preview" className="max-h-full max-w-full object-contain" />
-                                                    <div className="absolute inset-0 bg-black/20 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                    <div className="absolute inset-0 bg-black/20 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
                                                         <button
                                                             onClick={(e) => {
                                                                 e.preventDefault();
@@ -250,13 +257,13 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                                                 <Input
                                                     value={editName}
                                                     onChange={(e) => setEditName(e.target.value)}
-                                                    className="h-8 text-sm font-semibold flex-1"
+                                                    className="h-9 text-sm font-semibold flex-1"
                                                     placeholder="Nombre"
                                                 />
                                                 <select
                                                     value={editOccasionId}
                                                     onChange={(e) => setEditOccasionId(e.target.value)}
-                                                    className="h-8 text-xs border rounded-md px-2 bg-white text-gray-700 border-input focus:ring-1 focus:ring-purple-200"
+                                                    className="h-9 text-sm border rounded-md px-3 bg-white text-gray-700 border-input focus:ring-1 focus:ring-purple-200 cursor-pointer"
                                                 >
                                                     {occasions.map(occ => (
                                                         <option key={occ.id} value={occ.id}>
@@ -271,41 +278,43 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                                                 className="w-full text-sm rounded-md border border-input px-3 py-2 h-24 resize-y overflow-y-auto focus:ring-1 focus:ring-purple-200"
                                                 placeholder="Mensaje..."
                                             />
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    type="checkbox"
-                                                    id={`anon-${req.id}`}
-                                                    checked={editIsAnonymous}
-                                                    onChange={(e) => setEditIsAnonymous(e.target.checked)}
-                                                    className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                                                />
-                                                <label htmlFor={`anon-${req.id}`} className="text-xs text-gray-600">
-                                                    Enviar como anónimo
-                                                </label>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        id={`anon-${req.id}`}
+                                                        checked={editIsAnonymous}
+                                                        onChange={(e) => setEditIsAnonymous(e.target.checked)}
+                                                        className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                                    />
+                                                    <label htmlFor={`anon-${req.id}`} className="text-xs text-gray-600">
+                                                        Enviar como anónimo
+                                                    </label>
+                                                </div>
+                                                <div className="flex gap-1">
+                                                    <button
+                                                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${editAffection === 'te_quiero' ? 'bg-pink-100 text-pink-700 border-pink-200 font-medium' : 'text-gray-500 border-gray-200 hover:border-pink-200'}`}
+                                                        onClick={() => setEditAffection('te_quiero')}
+                                                    >
+                                                        Te Quiero
+                                                    </button>
+                                                    <button
+                                                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${editAffection === 'te_amo' ? 'bg-purple-100 text-purple-700 border-purple-200 font-medium' : 'text-gray-500 border-gray-200 hover:border-purple-200'}`}
+                                                        onClick={() => setEditAffection('te_amo')}
+                                                    >
+                                                        Te Amo
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="flex flex-col gap-2">
-                                            <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600 hover:bg-green-50 rounded-full border border-green-100" onClick={() => handleUpdate(req.id)}>
+                                            <Button size="icon" variant="ghost" className="h-9 w-9 text-green-600 hover:bg-green-50 hover:text-green-700 rounded-md border-2 border-green-200 hover:border-green-300" onClick={() => handleUpdate(req.id)} title="Guardar">
                                                 <Save className="w-4 h-4" />
                                             </Button>
-                                            <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-400 hover:bg-gray-100 rounded-full border border-gray-100" onClick={() => setEditingId(null)}>
+                                            <Button size="icon" variant="ghost" className="h-9 w-9 text-gray-500 hover:bg-gray-100 hover:text-gray-700 rounded-md border-2 border-gray-200 hover:border-gray-300" onClick={() => setEditingId(null)} title="Cancelar">
                                                 <X className="w-4 h-4" />
                                             </Button>
                                         </div>
-                                    </div>
-                                    <div className="flex gap-1">
-                                        <button
-                                            className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${editAffection === 'te_quiero' ? 'bg-pink-100 text-pink-700 border-pink-200 font-medium' : 'text-gray-500 border-gray-200 hover:border-pink-200'}`}
-                                            onClick={() => setEditAffection('te_quiero')}
-                                        >
-                                            Te Quiero
-                                        </button>
-                                        <button
-                                            className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${editAffection === 'te_amo' ? 'bg-purple-100 text-purple-700 border-purple-200 font-medium' : 'text-gray-500 border-gray-200 hover:border-purple-200'}`}
-                                            onClick={() => setEditAffection('te_amo')}
-                                        >
-                                            Te Amo
-                                        </button>
                                     </div>
                                 </div>
                             ) : (
@@ -340,17 +349,19 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                             )}
                         </div>
 
-                        <div className="flex items-center gap-1 self-end sm:self-center">
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-purple-500 hover:bg-purple-50 hover:text-purple-600" onClick={() => copyLink(req.slug)} title="Copiar">
-                                <Copy className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:bg-gray-100 hover:text-gray-600" onClick={() => startEdit(req)} title="Editar">
-                                <Edit2 className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-300 hover:bg-red-50 hover:text-red-500" onClick={() => handleDelete(req.id)} title="Eliminar">
-                                <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                        </div>
+                        {editingId !== req.id && (
+                            <div className="flex items-center gap-1 self-end sm:self-center">
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-purple-500 hover:bg-purple-50 hover:text-purple-600" onClick={() => copyLink(req.slug)} title="Copiar">
+                                    <Copy className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:bg-gray-100 hover:text-gray-600" onClick={() => startEdit(req)} title="Editar">
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-red-300 hover:bg-red-50 hover:text-red-500" onClick={() => handleDelete(req.id)} title="Eliminar">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 ))
                 }

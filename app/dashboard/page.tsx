@@ -31,11 +31,36 @@ interface CelebrationRequest {
     response: string;
 }
 
+interface Occasion {
+    id: string;
+    name: string;
+    slug: string;
+    icon: string;
+    primaryColor: string;
+    secondaryColor: string;
+    description: string;
+}
+
+interface AdminUser {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    status: string;
+    avatar?: string;
+    maxRequests: number;
+    requestsCount?: number;
+}
+
 export default function DashboardPage() {
     const router = useRouter();
     const [user, setUser] = useState<User | null>(null);
     const [loadingUser, setLoadingUser] = useState(true);
     const [requests, setRequests] = useState<CelebrationRequest[]>([]);
+    const [occasions, setOccasions] = useState<Occasion[]>([]);
+    const [loadingOccasions, setLoadingOccasions] = useState(true);
+    const [users, setUsers] = useState<AdminUser[]>([]);
+    const [loadingUsers, setLoadingUsers] = useState(true);
 
     useEffect(() => {
         const fetchUserAndRequests = async () => {
@@ -47,11 +72,37 @@ export default function DashboardPage() {
 
             try {
                 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-                // Fetch User
+
+                // Fetch user first to check if admin
                 const userRes = await axios.get(`${backendUrl}/auth/me`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
+
                 setUser(userRes.data);
+
+                // Fetch in parallel based on user role
+                const parallelRequests = [
+                    axios.get(`${backendUrl}/occasions`)
+                ];
+
+                // If admin, also fetch users
+                if (userRes.data.role === 'admin') {
+                    parallelRequests.push(
+                        axios.get(`${backendUrl}/users`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        })
+                    );
+                }
+
+                const results = await Promise.all(parallelRequests);
+
+                setOccasions(results[0].data);
+                setLoadingOccasions(false);
+
+                if (userRes.data.role === 'admin' && results[1]) {
+                    setUsers(results[1].data);
+                    setLoadingUsers(false);
+                }
 
                 // Fetch Requests
                 if (userRes.data.hasAccess) {
@@ -155,6 +206,8 @@ export default function DashboardPage() {
                             onCreated={handleRefreshRequests}
                             user={user}
                             requestCount={requests.length}
+                            occasions={occasions}
+                            loadingOccasions={loadingOccasions}
                         />
                     </TabsContent>
 
@@ -169,7 +222,12 @@ export default function DashboardPage() {
                         <TabsContent value="admin" className="mt-6">
                             <div className="bg-white/50 backdrop-blur-sm p-2 md:p-4 rounded-xl border border-purple-100">
                                 <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">Gestión de Usuarios (Admin) 👮‍♂️</h2>
-                                <AdminUsersTab requestsCount={requests.length} />
+                                <AdminUsersTab
+                                    requestsCount={requests.length}
+                                    occasions={occasions}
+                                    users={users}
+                                    loadingUsers={loadingUsers}
+                                />
                             </div>
                         </TabsContent>
                     )}

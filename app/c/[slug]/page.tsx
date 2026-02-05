@@ -9,6 +9,7 @@ import { Heart, Stars, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MovingButton } from '@/components/moving-button';
 import { Great_Vibes } from 'next/font/google';
+import { getOptimizedImageUrl } from '@/lib/image-utils';
 
 const greatVibes = Great_Vibes({
     weight: '400',
@@ -49,7 +50,7 @@ function FloatingHeart({ color }: { color: string }) {
         left: Math.random() * 100,
         duration: 10 + Math.random() * 20,
         delay: Math.random() * 5,
-        scale: 0.5 + Math.random() * 1.5
+        scale: 0.8 + Math.random() * 2.0 // Increased size (was 0.5 + ... * 1.5)
     }));
 
     return (
@@ -196,7 +197,7 @@ function PublicViewContent() {
                         initial={{ opacity: 0, scale: 0.9, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.5 } }}
-                        className="bg-white/80 backdrop-blur-md rounded-3xl p-4 md:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-white max-w-xl w-full text-center relative z-10"
+                        className="bg-white/80 backdrop-blur-md rounded-2xl px-3 py-5 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.1)] border border-white max-w-lg w-full text-center relative z-10"
                     >
                         {/* Creator Notice */}
                         <div className="mb-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-gray-100 shadow-sm animate-bounce text-xs font-medium text-gray-600">
@@ -204,13 +205,13 @@ function PublicViewContent() {
                             {data.extraData?.isAnonymous ? 'Alguien especial te envió algo...' : `${data.user.name} te envió algo especial`}
                         </div>
 
-                        <div className="mb-4">
-                            <h2 className="text-gray-500 font-medium mb-1 flex flex-col items-center justify-center gap-1">
-                                <span className="text-sm md:text-base">Hola,</span>
-                                <span className="text-3xl md:text-4xl font-bold tracking-tight" style={{ color: primaryColor }}>{data.partnerName} ✨</span>
+                        <div className="mb-2">
+                            <h2 className="text-gray-500 font-medium mb-0.5 flex flex-col items-center justify-center gap-0.5">
+                                <span className="text-xs md:text-sm">Hola,</span>
+                                <span className="text-2xl md:text-3xl font-bold tracking-tight" style={{ color: primaryColor }}>{data.partnerName} ✨</span>
                             </h2>
                             <h1
-                                className="text-3xl md:text-4xl lg:text-4xl font-normal mb-2 font-great-vibes leading-tight drop-shadow-sm"
+                                className="text-2xl md:text-3xl lg:text-3xl font-normal mb-1 font-great-vibes leading-tight drop-shadow-sm"
                                 style={{ color: primaryColor }}
                             >
                                 {getCelebrationTitle()}
@@ -218,31 +219,31 @@ function PublicViewContent() {
                         </div>
 
                         {data.imagePath && (
-                            <div className="mb-6 relative w-48 h-48 md:w-56 md:h-56 mx-auto rounded-2xl overflow-hidden shadow-xl border-4 border-white rotate-2 hover:rotate-0 transition-transform duration-500 bg-white">
+                            <div className="mb-3 relative w-32 h-32 md:w-40 md:h-40 mx-auto rounded-xl overflow-hidden shadow-lg border-2 border-white rotate-1 hover:rotate-0 transition-transform duration-500 bg-white">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                    src={`${(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '')}/${data.imagePath?.startsWith('/') ? data.imagePath.slice(1) : data.imagePath}`}
+                                    src={getOptimizedImageUrl(data.imagePath, { width: 800 }) || ''}
                                     alt="Foto compartida"
                                     className="object-contain w-full h-full"
                                 />
                             </div>
                         )}
 
-                        <p className="text-lg md:text-xl text-gray-800 font-medium mb-8 mx-auto max-w-lg leading-relaxed drop-shadow-sm font-handwriting">
+                        <p className="text-base md:text-lg text-gray-800 font-medium mb-4 mx-auto max-w-lg leading-snug drop-shadow-sm font-handwriting">
                             &quot;{data.message || 'Contigo cada momento es especial. Gracias por ser parte de mi vida.'}&quot;
                         </p>
 
-                        <div className="space-y-6">
-                            <h3 className="text-xl md:text-2xl font-semibold text-gray-800" style={{ color: primaryColor }}>
+                        <div className="space-y-4">
+                            <h3 className="text-lg md:text-xl font-semibold text-gray-800" style={{ color: primaryColor }}>
                                 {getQuestionText()}
                             </h3>
 
-                            <div className="h-5 flex items-center justify-center overflow-hidden mb-2">
+                            <div className="h-4 flex items-center justify-center overflow-hidden mb-1">
                                 <motion.p
                                     key={noCount}
                                     initial={{ opacity: 0, y: 5 }}
                                     animate={{ opacity: noCount > 0 ? 1 : 0, y: 0 }}
-                                    className="text-[10px] md:text-xs font-bold text-red-500 px-4 whitespace-nowrap"
+                                    className="text-[9px] md:text-[10px] font-bold text-red-500 px-4 whitespace-nowrap"
                                 >
                                     {/* Select message based on noCount, cycling if exceeded */}
                                     {(() => {
@@ -264,29 +265,26 @@ function PublicViewContent() {
                                 </motion.p>
                             </div>
 
-                            <div className="relative p-2 rounded-2xl bg-gray-50/50 border border-gray-100 min-h-[250px] overflow-hidden" ref={buttonBoxRef}>
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <div className="pointer-events-auto">
-                                        <Button
-                                            size="lg"
-                                            className="h-14 px-8 md:px-12 rounded-full text-lg font-bold shadow-lg hover:scale-105 transition-transform relative z-20"
-                                            style={{ backgroundColor: primaryColor }}
-                                            onClick={() => handleResponse('yes')}
-                                        >
-                                            ¡Sí, acepto! ❤️
-                                        </Button>
-                                    </div>
+                            <div className="relative p-1.5 rounded-xl bg-gray-50/50 border border-gray-100 min-h-[280px] w-full flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8" ref={buttonBoxRef}>
+                                <div className="z-20">
+                                    <Button
+                                        size="lg"
+                                        className="h-14 px-8 md:px-12 rounded-full text-lg font-bold shadow-lg hover:scale-105 transition-transform"
+                                        style={{ backgroundColor: primaryColor }}
+                                        onClick={() => handleResponse('yes')}
+                                    >
+                                        ¡Sí, acepto! ❤️
+                                    </Button>
                                 </div>
 
-                                {/* Rejection message moved to above buttons */}
                                 <MovingButton
                                     onTryClick={() => handleResponse('no')}
                                     containerRef={buttonBoxRef}
-                                    className="bottom-10 left-1/2 -translate-x-1/2"
+                                    className=""
                                     style={{
                                         borderColor: `${primaryColor}40`,
                                         color: primaryColor,
-                                        backgroundColor: `${primaryColor}10`
+                                        backgroundColor: '#ffffff'
                                     }}
                                 />
                             </div>

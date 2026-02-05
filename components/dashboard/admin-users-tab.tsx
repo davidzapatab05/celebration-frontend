@@ -12,9 +12,10 @@ import {
     DialogTitle,
     DialogDescription,
 } from '@/components/ui/dialog';
-import { ExternalLink, Trash2, Edit2, Save, X, Camera, Ban, Check } from 'lucide-react';
+import { ExternalLink, Trash2, Edit2, Save, X, Camera, Ban, Check, Copy } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
+import { getOptimizedImageUrl } from '@/lib/image-utils';
 
 interface User {
     id: string;
@@ -46,21 +47,28 @@ interface CelebrationRequest {
     createdAt: string;
     affectionLevel?: string;
     isAccepted?: boolean;
+    isAnonymous?: boolean;
     occasion?: Occasion;
 }
 
 // Add props interface
 interface AdminUsersTabProps {
     requestsCount?: number;
+    occasions: Occasion[];
+    users: User[];
+    loadingUsers: boolean;
 }
 
-export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
-    const [users, setUsers] = useState<User[]>([]);
-    const [loading, setLoading] = useState(true);
+export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, loadingUsers: initialLoadingUsers }: AdminUsersTabProps) {
+    const [users, setUsers] = useState<User[]>(initialUsers);
+    const [loading, setLoading] = useState(initialLoadingUsers);
     const [selectedUserForRequests, setSelectedUserForRequests] = useState<User | null>(null);
     const [userRequests, setUserRequests] = useState<CelebrationRequest[]>([]);
     const [loadingRequests, setLoadingRequests] = useState(false);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+    // Cache for user requests to avoid refetching
+    const [requestsCache, setRequestsCache] = useState<Map<string, CelebrationRequest[]>>(new Map());
 
     // Edit State for Modal
     const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
@@ -71,7 +79,6 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
     const [editImage, setEditImage] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [shouldDeleteImage, setShouldDeleteImage] = useState(false);
-    const [occasions, setOccasions] = useState<Occasion[]>([]);
     const [editOccasionId, setEditOccasionId] = useState<string>('');
 
     // Pagination State (Users)
@@ -90,10 +97,6 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setUsers(response.data);
-
-            // Fetch occasions
-            const occasionsRes = await axios.get(`${backendUrl}/occasions`);
-            setOccasions(occasionsRes.data);
         } catch (error) {
             console.error('Error fetching users', error);
             toast.error('Error al cargar usuarios');
@@ -102,9 +105,18 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
         }
     };
 
+    // Sync with props when they change
     useEffect(() => {
-        fetchUsers();
-    }, [requestsCount]); // Refetch when requests count changes locally
+        setUsers(initialUsers);
+        setLoading(initialLoadingUsers);
+    }, [initialUsers, initialLoadingUsers]);
+
+    useEffect(() => {
+        // Only fetch if we don't have users yet
+        if (users.length === 0 && !loading) {
+            fetchUsers();
+        }
+    }, []);
     const itemsPerPage = 5;
 
     // Pagination State (Requests)
@@ -138,8 +150,18 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
     const handleViewRequests = async (user: User) => {
         setSelectedUserForRequests(user);
         setIsDialogOpen(true);
-        setLoadingRequests(true);
         setCurrentPageRequests(1); // Reset requests page
+
+        // Check cache first
+        const cachedRequests = requestsCache.get(user.id);
+        if (cachedRequests) {
+            setUserRequests(cachedRequests);
+            setLoadingRequests(false);
+            return;
+        }
+
+        // If not in cache, fetch from API
+        setLoadingRequests(true);
         try {
             const token = localStorage.getItem('auth_token');
             const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
@@ -147,6 +169,9 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setUserRequests(res.data);
+
+            // Store in cache
+            setRequestsCache(prev => new Map(prev).set(user.id, res.data));
         } catch (error) {
             console.error('Error fetching user requests', error);
             toast.error('Error al cargar enlaces del usuario');
@@ -200,7 +225,7 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
         setEditOccasionId(req.occasion?.id || '');
         setEditImage(null);
         setShouldDeleteImage(false);
-        setImagePreview(req.imagePath ? (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001') + req.imagePath : null);
+        setImagePreview(getOptimizedImageUrl(req.imagePath, { width: 800 }));
     };
 
     const handleUpdateAdmin = async (id: string) => {
@@ -226,14 +251,21 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
-            setUserRequests(userRequests.map(r => r.id === id ? {
+            const updatedRequests = userRequests.map(r => r.id === id ? {
                 ...r,
                 partnerName: editName,
                 message: editMessage,
                 affectionLevel: editAffection,
                 occasion: occasions.find(o => o.id === editOccasionId) || r.occasion,
                 imagePath: shouldDeleteImage ? null : (response.data.imagePath || r.imagePath)
-            } : r));
+            } : r);
+
+            setUserRequests(updatedRequests);
+
+            // Update cache
+            if (selectedUserForRequests) {
+                setRequestsCache(prev => new Map(prev).set(selectedUserForRequests.id, updatedRequests));
+            }
 
             setEditingRequestId(null);
             toast.success('Actualizado correctamente ✨');
@@ -502,7 +534,7 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
             )}
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent id="admin-user-requests-modal" className="w-[95vw] max-w-2xl max-h-[90vh] flex flex-col p-6 overflow-hidden sm:rounded-2xl gap-0">
+                <DialogContent id="admin-user-requests-modal" className="w-[50vw] min-w-[600px] max-w-[800px] max-h-[90vh] flex flex-col p-6 overflow-hidden sm:rounded-2xl gap-0">
                     <DialogHeader className="pb-4 shrink-0">
                         <DialogTitle className="flex items-center gap-2 text-purple-950 text-lg">
                             Enlaces de {selectedUserForRequests?.name} 💌
@@ -527,113 +559,130 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
                                         </div>
                                     ) : (
                                         currentRequests.map((req) => (
-                                            <div key={req.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white border border-purple-100 rounded-xl hover:border-purple-300 transition-all shadow-sm">
+                                            <div key={req.id} className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-white border border-purple-100 rounded-xl hover:border-purple-300 transition-all shadow-sm">
                                                 <div className="flex-1 min-w-0">
                                                     {editingRequestId === req.id ? (
-                                                        <div className="flex flex-col gap-3">
-                                                            <div className="flex items-start gap-3">
-                                                                <div className="relative group/img h-16 w-16 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center overflow-hidden shrink-0 shadow-sm transition-all hover:border-purple-300">
-                                                                    {imagePreview ? (
-                                                                        <div className="relative h-full w-full flex items-center justify-center bg-white/50">
-                                                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                                            <img src={imagePreview} alt="Preview" className="max-h-full max-w-full object-contain" />
-                                                                            <div className="absolute inset-0 bg-black/20 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                                                <button
-                                                                                    onClick={(e) => {
-                                                                                        e.preventDefault();
-                                                                                        e.stopPropagation();
-                                                                                        setImagePreview(null);
-                                                                                        setEditImage(null);
-                                                                                        setShouldDeleteImage(true);
-                                                                                    }}
-                                                                                    className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-lg transform hover:scale-110 transition-all active:scale-90"
-                                                                                    title="Eliminar foto"
-                                                                                >
-                                                                                    <X className="w-2.5 h-2.5" />
-                                                                                </button>
-                                                                            </div>
+                                                        <div className="flex items-start gap-3">
+                                                            {/* Image on the left */}
+                                                            <div className="relative group/img h-20 w-20 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center overflow-hidden shrink-0 shadow-sm transition-all hover:border-purple-300">
+                                                                {imagePreview ? (
+                                                                    <div className="relative h-full w-full flex items-center justify-center bg-white/50">
+                                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                        <img src={imagePreview} alt="Preview" className="max-h-full max-w-full object-contain" />
+                                                                        <div className="absolute inset-0 bg-black/20 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    e.stopPropagation();
+                                                                                    setImagePreview(null);
+                                                                                    setEditImage(null);
+                                                                                    setShouldDeleteImage(true);
+                                                                                }}
+                                                                                className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-lg transform hover:scale-110 transition-all active:scale-90"
+                                                                                title="Eliminar foto"
+                                                                            >
+                                                                                <X className="w-3.5 h-3.5" />
+                                                                            </button>
                                                                         </div>
-                                                                    ) : (
-                                                                        <div className="flex flex-col items-center gap-0.5">
-                                                                            <Camera className="w-5 h-5 text-purple-300" />
-                                                                            <span className="text-[6px] font-bold text-purple-400 uppercase">Subir</span>
-                                                                        </div>
-                                                                    )}
-                                                                    <input
-                                                                        type="file"
-                                                                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                                                                        onChange={(e) => {
-                                                                            const file = e.target.files?.[0];
-                                                                            if (file) {
-                                                                                setEditImage(file);
-                                                                                setImagePreview(URL.createObjectURL(file));
-                                                                                setShouldDeleteImage(false);
-                                                                            }
-                                                                        }}
-                                                                        accept="image/*"
-                                                                    />
-                                                                </div>
-                                                                <div className="flex-1 flex flex-col gap-2">
-                                                                    <div className="flex gap-2">
-                                                                        <Input
-                                                                            value={editName}
-                                                                            onChange={(e) => setEditName(e.target.value)}
-                                                                            className="h-8 text-sm font-medium flex-1"
-                                                                            placeholder="Nombre"
-                                                                        />
-                                                                        <select
-                                                                            value={editOccasionId}
-                                                                            onChange={(e) => setEditOccasionId(e.target.value)}
-                                                                            className="h-8 text-xs border rounded-md px-2 bg-white text-gray-700 border-input focus:ring-1 focus:ring-purple-200"
-                                                                        >
-                                                                            {occasions.map(occ => (
-                                                                                <option key={occ.id} value={occ.id}>
-                                                                                    {occ.name}
-                                                                                </option>
-                                                                            ))}
-                                                                        </select>
                                                                     </div>
-                                                                    <textarea
-                                                                        value={editMessage}
-                                                                        onChange={(e) => setEditMessage(e.target.value)}
-                                                                        className="w-full text-xs rounded-md border border-input px-2 py-1 h-20 resize-y overflow-y-auto focus:ring-1 focus:ring-purple-200"
-                                                                        placeholder="Mensaje..."
+                                                                ) : (
+                                                                    <div className="flex flex-col items-center gap-1">
+                                                                        <Camera className="w-6 h-6 text-purple-300" />
+                                                                        <span className="text-[7px] font-bold text-purple-400 uppercase">Subir</span>
+                                                                    </div>
+                                                                )}
+                                                                <input
+                                                                    type="file"
+                                                                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                                                    onChange={(e) => {
+                                                                        const file = e.target.files?.[0];
+                                                                        if (file) {
+                                                                            setEditImage(file);
+                                                                            setImagePreview(URL.createObjectURL(file));
+                                                                            setShouldDeleteImage(false);
+                                                                        }
+                                                                    }}
+                                                                    accept="image/*"
+                                                                />
+                                                            </div>
+
+                                                            {/* Content in the middle */}
+                                                            <div className="flex-1 flex flex-col gap-2">
+                                                                <div className="flex gap-2 items-center">
+                                                                    <Input
+                                                                        value={editName}
+                                                                        onChange={(e) => setEditName(e.target.value)}
+                                                                        className="h-9 text-sm font-semibold flex-1 px-3 rounded-lg border-gray-200"
+                                                                        placeholder="Nombre"
                                                                     />
+                                                                    <select
+                                                                        value={editOccasionId}
+                                                                        onChange={(e) => setEditOccasionId(e.target.value)}
+                                                                        className="h-9 text-xs border-gray-200 border rounded-lg px-3 bg-white text-gray-600 focus:ring-1 focus:ring-purple-200 cursor-pointer w-40 font-medium"
+                                                                    >
+                                                                        {occasions.map(occ => (
+                                                                            <option key={occ.id} value={occ.id}>
+                                                                                {occ.name}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </div>
+                                                                <textarea
+                                                                    value={editMessage}
+                                                                    onChange={(e) => setEditMessage(e.target.value)}
+                                                                    className="w-full text-sm rounded-lg border border-gray-200 px-3 py-2 h-20 resize-y focus:ring-1 focus:ring-purple-200 text-gray-700 leading-normal"
+                                                                    placeholder="Escribe tu mensaje..."
+                                                                />
+                                                                <div className="flex items-center justify-between">
                                                                     <div className="flex items-center gap-2">
                                                                         <input
                                                                             type="checkbox"
                                                                             id={`anon-admin-${req.id}`}
                                                                             checked={editIsAnonymous}
                                                                             onChange={(e) => setEditIsAnonymous(e.target.checked)}
-                                                                            className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                                                            className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                                                         />
-                                                                        <label htmlFor={`anon-admin-${req.id}`} className="text-xs text-gray-600">
+                                                                        <label htmlFor={`anon-admin-${req.id}`} className="text-xs font-medium text-gray-500">
                                                                             Enviar como anónimo
                                                                         </label>
                                                                     </div>
-                                                                </div>
-                                                                <div className="flex flex-col gap-1">
-                                                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-50 rounded-full border border-green-50" onClick={() => handleUpdateAdmin(req.id)}>
-                                                                        <Save className="w-3.5 h-3.5" />
-                                                                    </Button>
-                                                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-gray-400 hover:bg-gray-100 rounded-full border border-gray-100" onClick={() => setEditingRequestId(null)}>
-                                                                        <X className="w-3.5 h-3.5" />
-                                                                    </Button>
+                                                                    <div className="flex gap-1.5">
+                                                                        <button
+                                                                            className={`px-3 py-1 text-[11px] rounded-full border transition-all active:scale-95 ${editAffection === 'te_quiero' ? 'bg-pink-50 text-pink-600 border-pink-100 font-bold' : 'text-gray-400 border-gray-100 hover:border-pink-100 bg-white'}`}
+                                                                            onClick={() => setEditAffection('te_quiero')}
+                                                                        >
+                                                                            Te Quiero
+                                                                        </button>
+                                                                        <button
+                                                                            className={`px-3 py-1 text-[11px] rounded-full border transition-all active:scale-95 ${editAffection === 'te_amo' ? 'bg-purple-50 text-purple-600 border-purple-100 font-bold' : 'text-gray-400 border-gray-100 hover:border-purple-100 bg-white'}`}
+                                                                            onClick={() => setEditAffection('te_amo')}
+                                                                        >
+                                                                            Te Amo
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="flex gap-1">
-                                                                <button
-                                                                    className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${editAffection === 'te_quiero' ? 'bg-pink-100 text-pink-700 border-pink-200 font-medium' : 'text-gray-500 border-gray-200 hover:border-pink-200'}`}
-                                                                    onClick={() => setEditAffection('te_quiero')}
+
+                                                            {/* Vertical Action buttons column on the right */}
+                                                            <div className="flex flex-col gap-1.5 shrink-0">
+                                                                <Button
+                                                                    size="icon"
+                                                                    variant="ghost"
+                                                                    className="h-9 w-9 text-green-500 hover:bg-green-50 hover:text-green-600 rounded-lg border-2 border-green-50 hover:border-green-100 bg-white shadow-sm flex items-center justify-center"
+                                                                    onClick={() => handleUpdateAdmin(req.id)}
+                                                                    title="Guardar"
                                                                 >
-                                                                    Te Quiero
-                                                                </button>
-                                                                <button
-                                                                    className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${editAffection === 'te_amo' ? 'bg-purple-100 text-purple-700 border-purple-200 font-medium' : 'text-gray-500 border-gray-200 hover:border-purple-200'}`}
-                                                                    onClick={() => setEditAffection('te_amo')}
+                                                                    <Save className="w-4 h-4" />
+                                                                </Button>
+                                                                <Button
+                                                                    size="icon"
+                                                                    variant="ghost"
+                                                                    className="h-9 w-9 text-gray-400 hover:bg-gray-50 hover:text-gray-500 rounded-lg border-2 border-gray-50 hover:border-gray-100 bg-white shadow-sm flex items-center justify-center"
+                                                                    onClick={() => setEditingRequestId(null)}
+                                                                    title="Cancelar"
                                                                 >
-                                                                    Te Amo
-                                                                </button>
+                                                                    <X className="w-4 h-4" />
+                                                                </Button>
                                                             </div>
                                                         </div>
                                                     ) : (
@@ -669,8 +718,8 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
                                                     )}
                                                 </div>
 
-                                                <div className="flex items-center gap-1 self-end sm:self-center shrink-0">
-                                                    {!editingRequestId && (
+                                                {editingRequestId !== req.id && (
+                                                    <div className="flex items-start gap-1 shrink-0 ml-auto">
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
@@ -680,26 +729,26 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
                                                         >
                                                             <Edit2 className="w-4 h-4" />
                                                         </Button>
-                                                    )}
-                                                    <a
-                                                        href={`/c/${req.slug}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-purple-500 hover:bg-purple-50 hover:text-purple-600 transition-colors"
-                                                        title="Abrir enlace"
-                                                    >
-                                                        <ExternalLink className="w-4 h-4" />
-                                                    </a>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8 text-red-300 hover:bg-red-50 hover:text-red-500"
-                                                        onClick={() => handleDeleteRequest(req.id)}
-                                                        title="Eliminar"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </Button>
-                                                </div>
+                                                        <a
+                                                            href={`/c/${req.slug}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-purple-500 hover:bg-purple-50 hover:text-purple-600 transition-colors"
+                                                            title="Abrir enlace"
+                                                        >
+                                                            <ExternalLink className="w-4 h-4" />
+                                                        </a>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 text-red-300 hover:bg-red-50 hover:text-red-500"
+                                                            onClick={() => handleDeleteRequest(req.id)}
+                                                            title="Eliminar"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </Button>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))
                                     )}
@@ -733,12 +782,13 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
                                 </div>
                             )}
                         </div>
-                    )}
-                </DialogContent>
-            </Dialog>
+                    )
+                    }
+                </DialogContent >
+            </Dialog >
 
             {/* CONFIRMATION DIALOG FOR REQUEST DELETION */}
-            <Dialog open={!!requestToDelete} onOpenChange={(open) => !open && setRequestToDelete(null)}>
+            < Dialog open={!!requestToDelete} onOpenChange={(open) => !open && setRequestToDelete(null)}>
                 <DialogContent overlayClassName="z-[99998]" className="max-w-xs sm:max-w-sm p-6 rounded-2xl bg-white shadow-xl z-[99999] overflow-hidden">
                     <DialogHeader>
                         <DialogTitle className="text-xl font-bold text-purple-950 text-center">¿Estás seguro?</DialogTitle>
@@ -762,10 +812,10 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
                         </Button>
                     </div>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
 
             {/* CONFIRMATION DIALOG FOR USER DELETION */}
-            <Dialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
+            < Dialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
                 <DialogContent overlayClassName="z-[99998]" className="max-w-md p-6 rounded-2xl bg-white shadow-xl z-[99999] overflow-hidden">
                     <DialogHeader>
                         <DialogTitle className="text-xl font-bold text-purple-950 text-center">¿Eliminar usuario?</DialogTitle>
@@ -789,7 +839,7 @@ export function AdminUsersTab({ requestsCount }: AdminUsersTabProps) {
                         </Button>
                     </div>
                 </DialogContent>
-            </Dialog>
-        </div>
+            </Dialog >
+        </div >
     );
 }

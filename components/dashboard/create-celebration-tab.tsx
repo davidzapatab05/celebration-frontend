@@ -14,12 +14,6 @@ interface User {
     maxRequests: number | null;
 }
 
-interface CreateCelebrationTabProps {
-    onCreated: () => void;
-    user: User | null;
-    requestCount: number;
-}
-
 interface Occasion {
     id: string;
     name: string;
@@ -28,6 +22,14 @@ interface Occasion {
     primaryColor: string;
     secondaryColor: string;
     description: string;
+}
+
+interface CreateCelebrationTabProps {
+    onCreated: () => void;
+    user: User | null;
+    requestCount: number;
+    occasions: Occasion[];
+    loadingOccasions: boolean;
 }
 
 // Mensajes sugeridos por ocasión
@@ -106,8 +108,7 @@ const messagesByOccasion: Record<string, string[]> = {
     ]
 };
 
-export function CreateCelebrationTab({ onCreated, user, requestCount }: CreateCelebrationTabProps) {
-    const [occasions, setOccasions] = useState<Occasion[]>([]);
+export function CreateCelebrationTab({ onCreated, user, requestCount, occasions, loadingOccasions }: CreateCelebrationTabProps) {
     const [selectedOccasion, setSelectedOccasion] = useState<Occasion | null>(null);
     const [partnerName, setPartnerName] = useState('');
     const [message, setMessage] = useState('');
@@ -119,26 +120,8 @@ export function CreateCelebrationTab({ onCreated, user, requestCount }: CreateCe
     const [image, setImage] = useState<File | null>(null);
     const [preview, setPreview] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [loadingOccasions, setLoadingOccasions] = useState(true);
     const [createdSlug, setCreatedSlug] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-
-    // Fetch occasions from backend
-    useEffect(() => {
-        const fetchOccasions = async () => {
-            try {
-                const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-                const response = await axios.get(`${backendUrl}/occasions`);
-                setOccasions(response.data);
-            } catch (error) {
-                console.error('Error fetching occasions', error);
-                toast.error('Error al cargar las ocasiones');
-            } finally {
-                setLoadingOccasions(false);
-            }
-        };
-        fetchOccasions();
-    }, []);
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
