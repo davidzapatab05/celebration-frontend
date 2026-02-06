@@ -56,6 +56,7 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
     const [requestToDelete, setRequestToDelete] = useState<string | null>(null);
     const [occasions, setOccasions] = useState<Occasion[]>([]);
     const [editOccasionId, setEditOccasionId] = useState<string>('');
+    const [editResponse, setEditResponse] = useState<string>('pending');
 
     const copyLink = (slug: string) => {
         const url = `${window.location.origin}/c/${slug}`;
@@ -99,6 +100,7 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
             formData.append('message', editMessage);
             formData.append('occasionId', editOccasionId);
             formData.append('affectionLevel', editAffection);
+            formData.append('response', editResponse);
             formData.append('extraData', JSON.stringify({ isAnonymous: editIsAnonymous }));
             if (editImage) {
                 formData.append('image', editImage);
@@ -117,6 +119,7 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                 partnerName: editName,
                 message: editMessage,
                 affectionLevel: editAffection,
+                response: editResponse,
                 occasion: occasions.find(o => o.id === editOccasionId) || r.occasion,
                 imagePath: shouldDeleteImage ? null : (response.data.imagePath || r.imagePath)
             } : r));
@@ -135,9 +138,35 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
         setEditAffection(request.affectionLevel || 'te_amo');
         setEditIsAnonymous(request.extraData?.isAnonymous || false);
         setEditOccasionId(request.occasion?.id || '');
+        setEditResponse(request.response || 'pending');
         setEditImage(null);
         setShouldDeleteImage(false);
         setImagePreview(request.imagePath ? getOptimizedImageUrl(request.imagePath, { width: 800 }) : null);
+    };
+
+    const toggleResponse = async (req: CelebrationRequest) => {
+        const newResponse = req.response === 'yes' ? 'pending' : 'yes';
+        // Optimistic Update
+        setRequests(requests.map(r => r.id === req.id ? { ...r, response: newResponse } : r));
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+
+            const formData = new FormData();
+            formData.append('response', newResponse);
+
+            await axios.patch(`${backendUrl}/celebration/${req.id}`,
+                formData,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            toast.success(`Estado actualizado a ${newResponse === 'yes' ? 'Si' : 'Pendiente'}`);
+        } catch (error) {
+            console.error('Error updating status', error);
+            toast.error('Error al actualizar estado');
+            // Revert
+            setRequests(requests.map(r => r.id === req.id ? { ...r, response: req.response } : r));
+        }
     };
 
     // Pagination State
@@ -211,7 +240,7 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                             {editingId === req.id ? (
                                 <div className="flex flex-col gap-3">
                                     <div className="flex items-start gap-3">
-                                        <div className="relative group/img h-20 w-20 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center overflow-hidden shrink-0 shadow-sm transition-all hover:border-purple-300">
+                                        <div className="relative group/img h-14 w-14 rounded-lg bg-purple-50 border border-purple-100 flex items-center justify-center overflow-hidden shrink-0 shadow-sm transition-all hover:border-purple-300">
                                             {imagePreview ? (
                                                 <div className="relative h-full w-full flex items-center justify-center bg-white/50">
                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -225,17 +254,17 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                                                                 setEditImage(null);
                                                                 setShouldDeleteImage(true);
                                                             }}
-                                                            className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-lg transform hover:scale-110 transition-all active:scale-90"
+                                                            className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-lg transform hover:scale-110 transition-all active:scale-90"
                                                             title="Eliminar foto"
                                                         >
-                                                            <X className="w-3.5 h-3.5" />
+                                                            <X className="w-3 h-3" />
                                                         </button>
                                                     </div>
                                                 </div>
                                             ) : (
-                                                <div className="flex flex-col items-center gap-1">
-                                                    <Camera className="w-7 h-7 text-purple-300" />
-                                                    <span className="text-[7px] font-bold text-purple-400 uppercase">Subir</span>
+                                                <div className="flex flex-col items-center gap-0.5">
+                                                    <Camera className="w-4 h-4 text-purple-300" />
+                                                    <span className="text-[6px] font-bold text-purple-400 uppercase">Subir</span>
                                                 </div>
                                             )}
                                             <input
@@ -253,17 +282,17 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                                             />
                                         </div>
                                         <div className="flex-1 flex flex-col gap-2">
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-2 items-center">
                                                 <Input
                                                     value={editName}
                                                     onChange={(e) => setEditName(e.target.value)}
-                                                    className="h-9 text-sm font-semibold flex-1"
+                                                    className="h-8 text-sm font-semibold flex-1 px-3 rounded-lg border-gray-200"
                                                     placeholder="Nombre"
                                                 />
                                                 <select
                                                     value={editOccasionId}
                                                     onChange={(e) => setEditOccasionId(e.target.value)}
-                                                    className="h-9 text-sm border rounded-md px-3 bg-white text-gray-700 border-input focus:ring-1 focus:ring-purple-200 cursor-pointer"
+                                                    className="h-8 text-xs border-gray-200 border rounded-lg px-2 bg-white text-gray-600 focus:ring-1 focus:ring-purple-200 cursor-pointer w-32 font-medium"
                                                 >
                                                     {occasions.map(occ => (
                                                         <option key={occ.id} value={occ.id}>
@@ -271,35 +300,56 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                                                         </option>
                                                     ))}
                                                 </select>
+                                                <div className="flex gap-1">
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-green-500 hover:bg-green-50 hover:text-green-600 rounded-lg border border-green-200 bg-white flex items-center justify-center transition-colors shadow-sm" onClick={() => handleUpdate(req.id)} title="Guardar">
+                                                        <Save className="w-4 h-4" />
+                                                    </Button>
+                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-gray-400 hover:bg-gray-50 hover:text-gray-500 rounded-lg border border-gray-200 bg-white flex items-center justify-center transition-colors shadow-sm" onClick={() => setEditingId(null)} title="Cancelar">
+                                                        <X className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
                                             </div>
                                             <textarea
                                                 value={editMessage}
                                                 onChange={(e) => setEditMessage(e.target.value)}
-                                                className="w-full text-sm rounded-md border border-input px-3 py-2 h-24 resize-y overflow-y-auto focus:ring-1 focus:ring-purple-200"
+                                                className="w-full text-sm rounded-lg border border-gray-200 px-3 py-1.5 h-14 resize-y focus:ring-1 focus:ring-purple-200 text-gray-700 leading-snug"
                                                 placeholder="Mensaje..."
                                             />
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-3">
+                                                <select
+                                                    value={editResponse}
+                                                    onChange={(e) => setEditResponse(e.target.value)}
+                                                    className={`h-7 text-xs border rounded-md px-2 font-bold cursor-pointer transition-colors ${editResponse === 'yes' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
+                                                >
+                                                    <option value="yes">Aceptado (SI)</option>
+                                                    <option value="pending">Pendiente</option>
+                                                </select>
+
+                                                <div className="h-4 w-px bg-gray-200"></div>
+
+                                                <div className="flex items-center gap-1.5 active:opacity-70 transition-opacity select-none cursor-pointer" onClick={() => setEditIsAnonymous(!editIsAnonymous)}>
                                                     <input
                                                         type="checkbox"
-                                                        id={`anon-${req.id}`}
                                                         checked={editIsAnonymous}
-                                                        onChange={(e) => setEditIsAnonymous(e.target.checked)}
-                                                        className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                                        onChange={() => { }} // Handled by parent
+                                                        className="w-3.5 h-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500 pointer-events-none"
                                                     />
-                                                    <label htmlFor={`anon-${req.id}`} className="text-xs text-gray-600">
-                                                        Enviar como anónimo
-                                                    </label>
+                                                    <span className="text-xs font-medium text-gray-500">
+                                                        Anónimo
+                                                    </span>
                                                 </div>
-                                                <div className="flex gap-1">
+
+                                                <div className="flex-1"></div>
+
+                                                <div className="flex gap-1.5">
                                                     <button
-                                                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${editAffection === 'te_quiero' ? 'bg-pink-100 text-pink-700 border-pink-200 font-medium' : 'text-gray-500 border-gray-200 hover:border-pink-200'}`}
+                                                        className={`px-3 py-0.5 text-[10px] rounded-full border transition-all active:scale-95 ${editAffection === 'te_quiero' ? 'bg-pink-50 text-pink-600 border-pink-100 font-bold' : 'text-gray-400 border-gray-100 hover:border-pink-100 bg-white'}`}
                                                         onClick={() => setEditAffection('te_quiero')}
                                                     >
                                                         Te Quiero
                                                     </button>
                                                     <button
-                                                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${editAffection === 'te_amo' ? 'bg-purple-100 text-purple-700 border-purple-200 font-medium' : 'text-gray-500 border-gray-200 hover:border-purple-200'}`}
+                                                        className={`px-3 py-0.5 text-[10px] rounded-full border transition-all active:scale-95 ${editAffection === 'te_amo' ? 'bg-purple-50 text-purple-600 border-purple-100 font-bold' : 'text-gray-400 border-gray-100 hover:border-purple-100 bg-white'}`}
                                                         onClick={() => setEditAffection('te_amo')}
                                                     >
                                                         Te Amo
@@ -307,23 +357,22 @@ export function MyRequestsTab({ requests, setRequests }: MyRequestsTabProps) {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex flex-col gap-2">
-                                            <Button size="icon" variant="ghost" className="h-9 w-9 text-green-600 hover:bg-green-50 hover:text-green-700 rounded-md border-2 border-green-200 hover:border-green-300" onClick={() => handleUpdate(req.id)} title="Guardar">
-                                                <Save className="w-4 h-4" />
-                                            </Button>
-                                            <Button size="icon" variant="ghost" className="h-9 w-9 text-gray-500 hover:bg-gray-100 hover:text-gray-700 rounded-md border-2 border-gray-200 hover:border-gray-300" onClick={() => setEditingId(null)} title="Cancelar">
-                                                <X className="w-4 h-4" />
-                                            </Button>
-                                        </div>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
                                         <h3 className="font-semibold text-sm text-gray-900 truncate">{req.partnerName}</h3>
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${req.response === 'yes' ? 'bg-green-100 text-green-700' : req.response === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
-                                            {req.response === 'yes' ? '¡Aceptado!' : req.response === 'rejected' ? 'Rechazado' : 'Pendiente'}
-                                        </span>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleResponse(req);
+                                            }}
+                                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider cursor-pointer hover:opacity-80 transition-all active:scale-95 ${req.response === 'yes' ? 'bg-green-100 text-green-700' : 'bg-amber-50 text-amber-600'}`}
+                                            title="Clic para cambiar estado"
+                                        >
+                                            {req.response === 'yes' ? 'SI' : 'PENDIENTE'}
+                                        </button>
                                         {req.occasion && (
                                             <span
                                                 className="text-[10px] px-2 py-0.5 rounded-full font-medium border"

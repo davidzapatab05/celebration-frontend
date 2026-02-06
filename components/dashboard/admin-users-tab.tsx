@@ -66,6 +66,11 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
     const [userRequests, setUserRequests] = useState<CelebrationRequest[]>([]);
     const [loadingRequests, setLoadingRequests] = useState(false);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+
+    useEffect(() => {
+        setCurrentUserEmail(localStorage.getItem('user_email'));
+    }, []);
 
     // Cache for user requests to avoid refetching
     const [requestsCache, setRequestsCache] = useState<Map<string, CelebrationRequest[]>>(new Map());
@@ -80,6 +85,7 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [shouldDeleteImage, setShouldDeleteImage] = useState(false);
     const [editOccasionId, setEditOccasionId] = useState<string>('');
+    const [editResponse, setEditResponse] = useState<string>('pending');
 
     // Pagination State (Users)
     const [currentPage, setCurrentPage] = useState(1);
@@ -215,6 +221,44 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
         }
     };
 
+
+
+    const toggleResponseAdmin = async (req: CelebrationRequest) => {
+        const newResponse = req.response === 'yes' ? 'pending' : 'yes';
+
+        // Optimistic Update
+        const updatedRequests = userRequests.map(r => r.id === req.id ? { ...r, response: newResponse } : r);
+        setUserRequests(updatedRequests);
+
+        // Update cache
+        if (selectedUserForRequests) {
+            setRequestsCache(prev => new Map(prev).set(selectedUserForRequests.id, updatedRequests));
+        }
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+
+            const formData = new FormData();
+            formData.append('response', newResponse);
+
+            await axios.patch(`${backendUrl}/celebration/${req.id}`,
+                formData,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            toast.success(`Estado actualizado a ${newResponse === 'yes' ? 'Si' : 'Pendiente'}`);
+        } catch (error) {
+            console.error('Error updating status', error);
+            toast.error('Error al actualizar estado');
+            // Revert
+            const revertedRequests = userRequests.map(r => r.id === req.id ? { ...r, response: req.response } : r);
+            setUserRequests(revertedRequests);
+            if (selectedUserForRequests) {
+                setRequestsCache(prev => new Map(prev).set(selectedUserForRequests.id, revertedRequests));
+            }
+        }
+    };
+
     const startEditRequest = (req: CelebrationRequest) => {
         setEditingRequestId(req.id);
         setEditName(req.partnerName);
@@ -223,6 +267,7 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
         // @ts-expect-error extraData might be undefined in strict mode but exists at runtime
         setEditIsAnonymous(req.extraData?.isAnonymous || false);
         setEditOccasionId(req.occasion?.id || '');
+        setEditResponse(req.response || 'pending');
         setEditImage(null);
         setShouldDeleteImage(false);
         setImagePreview(getOptimizedImageUrl(req.imagePath, { width: 800 }));
@@ -238,6 +283,7 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
             formData.append('message', editMessage);
             formData.append('occasionId', editOccasionId);
             formData.append('affectionLevel', editAffection);
+            formData.append('response', editResponse);
             formData.append('extraData', JSON.stringify({ isAnonymous: editIsAnonymous }));
             if (editImage) {
                 formData.append('image', editImage);
@@ -256,6 +302,7 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
                 partnerName: editName,
                 message: editMessage,
                 affectionLevel: editAffection,
+                response: editResponse,
                 occasion: occasions.find(o => o.id === editOccasionId) || r.occasion,
                 imagePath: shouldDeleteImage ? null : (response.data.imagePath || r.imagePath)
             } : r);
@@ -437,7 +484,7 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
                                 Ver Enlaces
                             </Button>
 
-                            {!isSuperAdmin(u.email) && (
+                            {!isSuperAdmin(u.email) && u.role !== 'admin' && (
                                 <div className="flex items-center gap-1 bg-gray-50 rounded-md px-2 py-0.5 border border-gray-100" title="Dejar vacío para ilimitado">
                                     <span className="text-[10px] text-gray-500 font-medium whitespace-nowrap">Límite:</span>
                                     <input
@@ -465,7 +512,7 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
                                 </div>
                             )}
 
-                            {!isSuperAdmin(u.email) && u.id !== users.find(me => me.email === localStorage.getItem('user_email'))?.id && (
+                            {!isSuperAdmin(u.email) && u.email !== currentUserEmail && (
                                 <div className="flex items-center gap-1">
                                     <Button
                                         size="icon"
@@ -564,7 +611,7 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
                                                     {editingRequestId === req.id ? (
                                                         <div className="flex items-start gap-3">
                                                             {/* Image on the left */}
-                                                            <div className="relative group/img h-20 w-20 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center overflow-hidden shrink-0 shadow-sm transition-all hover:border-purple-300">
+                                                            <div className="relative group/img h-14 w-14 rounded-lg bg-purple-50 border border-purple-100 flex items-center justify-center overflow-hidden shrink-0 shadow-sm transition-all hover:border-purple-300">
                                                                 {imagePreview ? (
                                                                     <div className="relative h-full w-full flex items-center justify-center bg-white/50">
                                                                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -578,17 +625,17 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
                                                                                     setEditImage(null);
                                                                                     setShouldDeleteImage(true);
                                                                                 }}
-                                                                                className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-lg transform hover:scale-110 transition-all active:scale-90"
+                                                                                className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-lg transform hover:scale-110 transition-all active:scale-90"
                                                                                 title="Eliminar foto"
                                                                             >
-                                                                                <X className="w-3.5 h-3.5" />
+                                                                                <X className="w-3 h-3" />
                                                                             </button>
                                                                         </div>
                                                                     </div>
                                                                 ) : (
-                                                                    <div className="flex flex-col items-center gap-1">
-                                                                        <Camera className="w-6 h-6 text-purple-300" />
-                                                                        <span className="text-[7px] font-bold text-purple-400 uppercase">Subir</span>
+                                                                    <div className="flex flex-col items-center gap-0.5">
+                                                                        <Camera className="w-4 h-4 text-purple-300" />
+                                                                        <span className="text-[6px] font-bold text-purple-400 uppercase">Subir</span>
                                                                     </div>
                                                                 )}
                                                                 <input
@@ -612,13 +659,13 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
                                                                     <Input
                                                                         value={editName}
                                                                         onChange={(e) => setEditName(e.target.value)}
-                                                                        className="h-9 text-sm font-semibold flex-1 px-3 rounded-lg border-gray-200"
+                                                                        className="h-8 text-sm font-semibold flex-1 px-3 rounded-lg border-gray-200"
                                                                         placeholder="Nombre"
                                                                     />
                                                                     <select
                                                                         value={editOccasionId}
                                                                         onChange={(e) => setEditOccasionId(e.target.value)}
-                                                                        className="h-9 text-xs border-gray-200 border rounded-lg px-3 bg-white text-gray-600 focus:ring-1 focus:ring-purple-200 cursor-pointer w-40 font-medium"
+                                                                        className="h-8 text-xs border-gray-200 border rounded-lg px-2 bg-white text-gray-600 focus:ring-1 focus:ring-purple-200 cursor-pointer w-32 font-medium"
                                                                     >
                                                                         {occasions.map(occ => (
                                                                             <option key={occ.id} value={occ.id}>
@@ -626,35 +673,67 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
                                                                             </option>
                                                                         ))}
                                                                     </select>
+                                                                    {/* Action buttons embedded in top row */}
+                                                                    <div className="flex gap-1">
+                                                                        <button
+                                                                            className="h-8 w-8 text-green-500 hover:bg-green-50 hover:text-green-600 rounded-lg border border-green-200 bg-white flex items-center justify-center transition-colors"
+                                                                            onClick={() => handleUpdateAdmin(req.id)}
+                                                                            title="Guardar"
+                                                                        >
+                                                                            <Save className="w-4 h-4" />
+                                                                        </button>
+                                                                        <button
+                                                                            className="h-8 w-8 text-gray-400 hover:bg-gray-50 hover:text-gray-500 rounded-lg border border-gray-200 bg-white flex items-center justify-center transition-colors"
+                                                                            onClick={() => setEditingRequestId(null)}
+                                                                            title="Cancelar"
+                                                                        >
+                                                                            <X className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
+
                                                                 <textarea
                                                                     value={editMessage}
                                                                     onChange={(e) => setEditMessage(e.target.value)}
-                                                                    className="w-full text-sm rounded-lg border border-gray-200 px-3 py-2 h-20 resize-y focus:ring-1 focus:ring-purple-200 text-gray-700 leading-normal"
+                                                                    className="w-full text-sm rounded-lg border border-gray-200 px-3 py-1.5 h-14 resize-y focus:ring-1 focus:ring-purple-200 text-gray-700 leading-snug"
                                                                     placeholder="Escribe tu mensaje..."
                                                                 />
-                                                                <div className="flex items-center justify-between">
-                                                                    <div className="flex items-center gap-2">
+
+                                                                <div className="flex items-center gap-3">
+                                                                    <select
+                                                                        value={editResponse}
+                                                                        onChange={(e) => setEditResponse(e.target.value)}
+                                                                        className={`h-7 text-xs border rounded-md px-2 font-bold cursor-pointer transition-colors ${editResponse === 'yes' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
+                                                                    >
+                                                                        <option value="yes">Aceptado (SI)</option>
+                                                                        <option value="pending">Pendiente</option>
+                                                                    </select>
+
+                                                                    <div className="h-4 w-px bg-gray-200"></div>
+
+                                                                    <div className="flex items-center gap-1.5 active:opacity-70 transition-opacity select-none cursor-pointer" onClick={() => setEditIsAnonymous(!editIsAnonymous)}>
                                                                         <input
                                                                             type="checkbox"
-                                                                            id={`anon-admin-${req.id}`}
                                                                             checked={editIsAnonymous}
-                                                                            onChange={(e) => setEditIsAnonymous(e.target.checked)}
-                                                                            className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                                            onChange={() => { }} // Handled by parent div
+                                                                            className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 pointer-events-none"
                                                                         />
-                                                                        <label htmlFor={`anon-admin-${req.id}`} className="text-xs font-medium text-gray-500">
-                                                                            Enviar como anónimo
-                                                                        </label>
+                                                                        <span className="text-xs font-medium text-gray-500">
+                                                                            Anónimo
+                                                                        </span>
                                                                     </div>
+
+                                                                    <div className="flex-1"></div>
+
                                                                     <div className="flex gap-1.5">
                                                                         <button
-                                                                            className={`px-3 py-1 text-[11px] rounded-full border transition-all active:scale-95 ${editAffection === 'te_quiero' ? 'bg-pink-50 text-pink-600 border-pink-100 font-bold' : 'text-gray-400 border-gray-100 hover:border-pink-100 bg-white'}`}
+                                                                            className={`px-3 py-0.5 text-[10px] rounded-full border transition-all active:scale-95 ${editAffection === 'te_quiero' ? 'bg-pink-50 text-pink-600 border-pink-100 font-bold' : 'text-gray-400 border-gray-100 hover:border-pink-100 bg-white'}`}
                                                                             onClick={() => setEditAffection('te_quiero')}
                                                                         >
                                                                             Te Quiero
                                                                         </button>
                                                                         <button
-                                                                            className={`px-3 py-1 text-[11px] rounded-full border transition-all active:scale-95 ${editAffection === 'te_amo' ? 'bg-purple-50 text-purple-600 border-purple-100 font-bold' : 'text-gray-400 border-gray-100 hover:border-purple-100 bg-white'}`}
+                                                                            className={`px-3 py-0.5 text-[10px] rounded-full border transition-all active:scale-95 ${editAffection === 'te_amo' ? 'bg-purple-50 text-purple-600 border-purple-100 font-bold' : 'text-gray-400 border-gray-100 hover:border-purple-100 bg-white'}`}
                                                                             onClick={() => setEditAffection('te_amo')}
                                                                         >
                                                                             Te Amo
@@ -662,36 +741,20 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
                                                                     </div>
                                                                 </div>
                                                             </div>
-
-                                                            {/* Vertical Action buttons column on the right */}
-                                                            <div className="flex flex-col gap-1.5 shrink-0">
-                                                                <Button
-                                                                    size="icon"
-                                                                    variant="ghost"
-                                                                    className="h-9 w-9 text-green-500 hover:bg-green-50 hover:text-green-600 rounded-lg border-2 border-green-50 hover:border-green-100 bg-white shadow-sm flex items-center justify-center"
-                                                                    onClick={() => handleUpdateAdmin(req.id)}
-                                                                    title="Guardar"
-                                                                >
-                                                                    <Save className="w-4 h-4" />
-                                                                </Button>
-                                                                <Button
-                                                                    size="icon"
-                                                                    variant="ghost"
-                                                                    className="h-9 w-9 text-gray-400 hover:bg-gray-50 hover:text-gray-500 rounded-lg border-2 border-gray-50 hover:border-gray-100 bg-white shadow-sm flex items-center justify-center"
-                                                                    onClick={() => setEditingRequestId(null)}
-                                                                    title="Cancelar"
-                                                                >
-                                                                    <X className="w-4 h-4" />
-                                                                </Button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
+                                                        </div>) : (
                                                         <div className="flex flex-col gap-1">
                                                             <div className="flex items-center gap-2">
                                                                 <h3 className="font-semibold text-sm text-gray-900 truncate max-w-[150px]">{req.partnerName}</h3>
-                                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold tracking-tight shrink-0 ${req.response === 'yes' ? 'bg-green-100 text-green-700' : req.response === 'no' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>
-                                                                    {req.response === 'yes' ? 'SÍ' : req.response === 'no' ? 'NO' : 'PENDIENTE'}
-                                                                </span>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        toggleResponseAdmin(req);
+                                                                    }}
+                                                                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold tracking-tight shrink-0 cursor-pointer hover:opacity-80 transition-all active:scale-95 ${req.response === 'yes' ? 'bg-green-100 text-green-700' : 'bg-amber-50 text-amber-600'}`}
+                                                                    title="Clic para cambiar estado"
+                                                                >
+                                                                    {req.response === 'yes' ? 'SI' : 'PENDIENTE'}
+                                                                </button>
                                                                 {req.occasion && (
                                                                     <span
                                                                         className="text-[10px] px-2 py-0.5 rounded-full font-medium border shrink-0"
