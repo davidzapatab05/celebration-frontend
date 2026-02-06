@@ -391,9 +391,10 @@ export function AdminUsersTab({ requestsCount, occasions, users: initialUsers, l
         }
     };
 
-    // Derived State - Users
-    const totalPages = Math.ceil(users.length / itemsPerPage);
-    const currentUsers = users.slice(
+    // Pagination Logic (Users) - Filter out Super Admin
+    const filteredUsers = users.filter(u => u.email !== 'davidzapata.dz051099@gmail.com');
+    const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+    const currentUsers = filteredUsers.slice(
         (currentPage - 1) * itemsPerPage,
         currentPage * itemsPerPage
     );
